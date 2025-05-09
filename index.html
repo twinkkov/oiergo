@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кликер</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Подключение библиотеки node-forge через CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js"></script>
+</head>
+<body>
+    <!-- Кнопка для открытия Лидерборда перемещена наверх -->
+    <button id="leaderboard-btn">📊 Лидерборд</button>
+
+    <div class="game-container">
+        <!-- Панель кнопок с иконками -->
+        <div class="top-buttons">
+            <button id="shop-btn" class="action-btn">🛒</button>
+            <button id="design-btn" class="action-btn">🎨</button>
+            <button id="dev-menu-btn" class="action-btn">🤖</button>
+            <button id="rebirth-btn" class="action-btn">💫</button>
+        </div>
+
+        <!-- Основные элементы интерфейса -->
+        <p>Монеты: <span id="coin-count">0</span></p>
+        <p>Уровень: <span id="level">1</span></p>
+        <div class="progress-bar">
+            <div id="level-progress-bar"></div>
+        </div>
+        <p>Множитель: <span id="multiplier-display">1.00</span>x</p>
+        <p>Автокликер: <span id="autoclicker-status">Нет</span></p>
+        <p>Скорость: <span id="autoclicker-speed">1.0</span> кликов/сек</p>
+        <p id="rebirths">Перерождений: 0</p>
+
+        <!-- Кнопка "Клик" -->
+        <button id="click-btn" class="click-btn">Клик!</button>
+
+        <h2>Достижения</h2>
+        <ul id="achievement-list"></ul>
+
+        <!-- Модальные окна -->
+        <div id="upgrades-modal" class="modal">
+            <div class="modal-content">
+                <span class="close-modal-btn">×</span>
+                <h2>Улучшения</h2>
+                <button id="buy-upgrade">Улучшить клик за <span id="upgrade-price">10</span> монет</button>
+                <button id="buy-autoclicker">Купить автокликер за 50 монет</button>
+                <button id="buy-autoclicker-upgrade">Улучшить автокликер за <span id="autoclicker-upgrade-price">100</span> монет</button>
+                <button id="buy-super-click">Купить супер-клик за 500 монет</button>
+                <button id="buy-double-click">Купить двойной клик за 800 монет</button>
+                <button id="buy-multi-click">Купить мульти-клик за 1000 монет</button>
+                <button id="buy-gold-rush">Купить золотую лихорадку за 1500 монет</button>
+            </div>
+        </div>
+        <div id="design-modal" class="modal">
+            <div class="modal-content">
+                <span class="close-modal-btn">×</span>
+                <h2>Выберите дизайн</h2>
+                <div id="design-options">
+                    <button onclick="window.setDesign(0)">Светлая тема</button>
+                    <button onclick="window.setDesign(1)">Темная тема</button>
+                    <button onclick="window.setDesign(2)">Дизайн 3</button>
+                    <button onclick="window.setDesign(3)">Дизайн 4</button>
+                    <button onclick="window.setDesign(4)">Дизайн 5</button>
+                </div>
+            </div>
+        </div>
+        <div id="developer-menu" class="modal">
+            <div class="modal-content">
+                <span class="close-modal-btn">×</span>
+                <h2>Меню разработчика</h2>
+                <input type="password" id="dev-password" placeholder="Пароль">
+                <button id="dev-login-btn">Войти</button>
+                <div id="dev-actions" style="display: none;">
+                    <input type="number" id="coins-input" placeholder="Монеты">
+                    <button id="set-coins-btn">Установить</button>
+                    <button id="reset-progress-btn">Сбросить прогресс</button>
+                </div>
+            </div>
+        </div>
+        <!-- Меню перерождения -->
+        <div id="rebirth-menu" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span id="close-rebirth-menu" class="close-modal-btn">×</span>
+                <h2>Меню перерождения</h2>
+                <p>Цена перерождения: <span id="rebirth-cost-display">0</span> монет</p>
+                <p>Количество перерождений: <span id="rebirth-count-display">0</span></p>
+                <button id="buy-rebirth-btn">Купить перерождение</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Лидерборд -->
+    <div id="leaderboard-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center;">
+        <div id="leaderboard-modal" style="background: #fff; border-radius: 15px; padding: 20px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; position: relative; margin: auto;">
+            <span id="close-leaderboard" class="close-modal-btn" style="position: absolute; top: 10px; right: 15px; font-size: 24px; cursor: pointer;">×</span>
+            <h2>Лидерборд</h2>
+            <table id="leaderboard">
+                <thead>
+                    <tr>
+                        <th>Место</th>
+                        <th>Игрок</th>
+                        <th>Монеты</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-list">
+                    <!-- Лидерборд будет заполняться через JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script type="module">
+    import { firebaseConfig } from './config.js';
+    
+    let firebaseApp = null;
+    let firestoreDB = null;
+    let leaderboardCache = null;
+    let lastUpdateTime = 0;
+    let userIP = null;
+    let retryTimeout = null;
+    const UPDATE_INTERVAL = 60000; // 1 минута между обновлениями
+    const RETRY_DELAY = 5000; // 5 секунд между попытками переподключения
+
+    // Генерация и получение уникального ID игрока
+    let playerId = localStorage.getItem('playerId');
+    if (!playerId) {
+        playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem('playerId', playerId);
+    }
+
+    // Функция для инициализации Firebase
+    async function initializeFirebase() {
+        try {
+            const { initializeApp } = await import('https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js');
+            const { getFirestore } = await import('https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js');
+
+            firebaseApp = initializeApp(firebaseConfig);
+            firestoreDB = getFirestore(firebaseApp);
+            console.log('Firebase успешно инициализирован');
+            return true;
+        } catch (error) {
+            console.error('Ошибка инициализации Firebase:', error);
+            return false;
+        }
+    }
+
+    // Функция для получения IP с повторными попытками
+    async function getIP() {
+        for (let i = 0; i < 3; i++) {
+            try {
+                const response = await fetch('https://api.ipify.org?format=json');
+                const data = await response.json();
+                return data.ip;
+            } catch (error) {
+                console.error('Попытка получения IP не удалась:', error);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+        return 'unknown-' + Date.now();
+    }
+
+    // Функция для загрузки лидерборда с кэшированием
+    async function loadLeaderboard(forceRefresh = false) {
+        const container = document.getElementById('leaderboard-container');
+        const tbody = document.getElementById('leaderboard-list');
+        if (!tbody) return;
+
+        try {
+            // Используем кэш если он есть и не требуется обновление
+            if (!forceRefresh && leaderboardCache) {
+                updateLeaderboardDisplay(leaderboardCache);
+                return;
+            }
+
+            if (!firestoreDB) {
+                if (!await initializeFirebase()) {
+                    throw new Error('Firebase не инициализирован');
+                }
+            }
+
+            const { collection, query, orderBy, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js');
+            
+            const leaderboardRef = query(
+                collection(firestoreDB, 'leaderboard'),
+                orderBy('coins', 'desc'),
+                limit(10)
+            );
+
+            const snapshot = await getDocs(leaderboardRef);
+            const leaderboard = [];
+            snapshot.forEach(doc => leaderboard.push(doc.data()));
+            
+            leaderboardCache = leaderboard;
+            updateLeaderboardDisplay(leaderboard);
+        } catch (error) {
+            console.error('Ошибка загрузки лидерборда:', error);
+            if (leaderboardCache) {
+                updateLeaderboardDisplay(leaderboardCache);
+            }
+            scheduleRetry();
+        }
+    }
+
+    // Функция для отображения лидерборда
+    function updateLeaderboardDisplay(leaderboard) {
+        const tbody = document.getElementById('leaderboard-list');
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+        leaderboard.forEach((entry, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${entry.name}</td>
+                <td>${entry.coins.toLocaleString()}</td>
+            `;
+            if (entry.playerId === playerId) {
+                row.style.fontWeight = 'bold';
+            }
+            tbody.appendChild(row);
+        });
+    }
+
+    // Функция для обновления счета игрока
+    async function updatePlayerScore(playerName, coins) {
+        if (!playerName || !playerId) return;
+
+        const now = Date.now();
+        if (now - lastUpdateTime < UPDATE_INTERVAL) return;
+
+        try {
+            if (!firestoreDB) {
+                if (!await initializeFirebase()) {
+                    throw new Error('Firebase не инициализирован');
+                }
+            }
+
+            const { collection, doc, setDoc, getDoc } = await import('https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js');
+            
+            // Проверяем существующую запись
+            const docRef = doc(collection(firestoreDB, 'leaderboard'), playerId);
+            const docSnap = await getDoc(docRef);
+            
+            // Проверяем время последнего обновления
+            if (docSnap.exists()) {
+                const lastUpdate = docSnap.data().lastUpdate || 0;
+                if (now - lastUpdate < 10000) { // 10 секунд между обновлениями
+                    return;
+                }
+            }
+
+            // Подготавливаем данные
+            const data = {
+                name: playerName.slice(0, 50), // Ограничиваем длину имени
+                coins: Math.min(Math.floor(coins), 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000), // Ограничиваем количество монет
+                playerId: playerId,
+                lastUpdate: now
+            };
+
+            // Сохраняем данные
+            await setDoc(docRef, data);
+
+            lastUpdateTime = now;
+
+            // Обновляем отображение только если окно открыто
+            const container = document.getElementById('leaderboard-container');
+            if (container && container.style.display === 'block') {
+                await loadLeaderboard(true);
+            }
+        } catch (error) {
+            console.error('Ошибка обновления счета:', error);
+            // Не показываем ошибку пользователю, просто логируем
+            scheduleRetry();
+        }
+    }
+
+    // Функция для повторной попытки при ошибке
+    function scheduleRetry() {
+        if (retryTimeout) clearTimeout(retryTimeout);
+        retryTimeout = setTimeout(async () => {
+            await initializeFirebase();
+        }, RETRY_DELAY);
+    }
+
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            // Получаем IP перед инициализацией Firebase
+            userIP = await getIP();
+
+            // Инициализируем Firebase
+            await initializeFirebase();
+
+            // Настраиваем обработчики событий
+            const closeBtn = document.getElementById('close-leaderboard');
+            const container = document.getElementById('leaderboard-container');
+            const leaderboardBtn = document.getElementById('leaderboard-btn');
+
+            if (closeBtn) {
+                closeBtn.onclick = () => {
+                    if (container) container.style.display = 'none';
+                };
+            }
+
+            if (container) {
+                container.onclick = (e) => {
+                    if (e.target === container) {
+                        container.style.display = 'none';
+                    }
+                };
+            }
+
+            if (leaderboardBtn) {
+                leaderboardBtn.onclick = () => {
+                    if (container) {
+                        container.style.display = 'block';
+                        loadLeaderboard();
+                    }
+                };
+            }
+
+            // Экспортируем функции для использования в основном скрипте
+            window.updateLeaderboard = updatePlayerScore;
+            window.loadLeaderboard = loadLeaderboard;
+
+            // Добавляем автоматическое обновление таблицы каждые 60 секунд
+            setInterval(() => {
+                const container = document.getElementById('leaderboard-container');
+                if (container && container.style.display === 'block') {
+                    loadLeaderboard(true);
+                }
+            }, UPDATE_INTERVAL);
+
+            // Добавляем автоматическую проверку баланса игроков каждые 60 секунд
+            setInterval(() => {
+                const playerName = localStorage.getItem('playerName');
+                const coins = parseInt(localStorage.getItem('coins'), 10) || 0;
+                if (playerName) {
+                    updatePlayerScore(playerName, coins);
+                }
+            }, UPDATE_INTERVAL);
+        } catch (error) {
+            console.error('Ошибка при инициализации:', error);
+            scheduleRetry();
+        }
+    });
+    </script>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
